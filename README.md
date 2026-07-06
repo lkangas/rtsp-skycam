@@ -18,8 +18,8 @@ Target host **fresnel** is an Intel NUC (i5, x86-64, Ubuntu). Image base:
 
 ## Status
 
-✅ **Code-complete** — all core steps landed (see [PLAN.md](PLAN.md) for the full
-design and checklist):
+✅ **Live on fresnel** — capturing `stream1` from the Tapo, healthy, frames landing
+under `data/`. All core steps done (see [PLAN.md](PLAN.md) for the full design):
 
 - ✅ Repo, plan & conventions
 - ✅ Upstream vendored + deps

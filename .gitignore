@@ -14,8 +14,10 @@ config/config.yaml
 *.crt
 secrets/
 
-# Captured output
-/data/
+# Captured output — track the dir (so a fresh clone owns ./data as the cloning
+# user, not root-created by Docker on first `up`), but ignore its contents.
+/data/*
+!/data/.gitkeep
 /output/
 *.jpg
 *.jpeg

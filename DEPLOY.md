@@ -33,11 +33,17 @@ The real coordinates go **only** in `.env` (gitignored) — this repo is public.
 
 ## 4. Data directory permissions
 
-The containers run as uid 1000. On a standard single-user Ubuntu the first
-account is already 1000, so `./data` (created by compose) is yours. If not:
+The containers run as uid 1000. The repo ships a tracked `data/` dir, so after a
+clone it's owned by *you* (uid 1000 on a standard single-user Ubuntu) and writes
+just work — no action needed.
+
+If you ever see the capturer crash-loop on `PermissionError: '/data/day'` (e.g.
+Docker pre-created `./data` as root before the dir existed), fix ownership with a
+one-shot root container (no sudo needed) and restart:
 
 ```bash
-mkdir -p data && sudo chown -R 1000:1000 data
+docker run --rm -v "$PWD/data:/data" python:3.13-slim chown -R 1000:1000 /data
+docker compose restart capturer
 ```
 
 ## 5. Launch

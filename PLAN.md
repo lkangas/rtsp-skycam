@@ -170,9 +170,11 @@ Bounds disk on the NUC SSD while preserving the assembled videos.
 Each step is its own commit (or small series), pushed to GitHub; PLAN/README are
 kept current as each lands.
 
-**All core steps are code-complete.** The remaining validation is real-world:
-build and run on fresnel with a filled-in `.env`, confirm frames land and the
-first day/night timelapses assemble.
+**Deployed & live on fresnel** (2026-07-07) — image built, both services running,
+capturer healthy and saving frames from `stream1` to `data/`. Note: at Espoo
+(60°N) in early July the sun bottoms out near −7.3°, so with `SUN_LIMIT=-8` it
+stays in day mode (single frames) through the white nights; night peak-hold
+kicks in as the sun starts dipping below −8° later in the season.
 
 ---
 
