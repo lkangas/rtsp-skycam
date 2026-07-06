@@ -1,0 +1,12 @@
+# Python deps for the capturer/assembler.
+# Mirrors upstream's conda env (ephem numba pillow py-opencv pyyaml) but via pip,
+# using the headless OpenCV build (no GUI libs) for a slim container.
+# Floors chosen for Python 3.13 support; exact versions are locked when the
+# image is built and tested (Phase 3 — Dockerfile).
+
+opencv-python-headless>=4.10   # RTSP capture; headless = no GUI/X11 deps
+numba>=0.61                    # first releases with Python 3.13 support
+numpy>=2.1,<2.3               # kept within numba's supported NumPy range
+pillow>=11.0                   # image save (BGR->RGB) as in upstream Saver
+PyYAML>=6.0                    # config parsing
+ephem>=4.1                     # sun altitude for the day/night gate
