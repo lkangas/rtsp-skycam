@@ -1,6 +1,18 @@
-# Secrets / local config
+# Per-machine config — never committed (only .env differs per machine).
+# Commit .env.example instead.
+**/.env
 .env
 *.local.yaml
+
+# Rendered config contains secrets (envsubst from the committed *.template).
+# The template IS committed; the rendered copy is not.
+config/config.yaml
+
+# Secrets, certs, keys
+*.pem
+*.key
+*.crt
+secrets/
 
 # Captured output
 /data/
@@ -13,6 +25,8 @@
 __pycache__/
 *.py[cod]
 .venv/
+venv/
+*.egg-info/
 
 # Editor / OS
 .idea/
