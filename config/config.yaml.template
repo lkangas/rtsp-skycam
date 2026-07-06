@@ -24,6 +24,8 @@ output:
 
 runtime:
   heartbeat_file: /run/skycam/heartbeat
-  # No frame for this many seconds is logged as a stall; the reader reconnects
-  # and the container healthcheck restarts us if it persists.
+  # No frame for this many seconds is logged as a stall; the reader reconnects.
   stall_timeout: 20
+  # No frame for this many seconds -> exit nonzero so the container restarts
+  # from a clean process/connection (also covers failing to connect at startup).
+  hard_stall_timeout: 120

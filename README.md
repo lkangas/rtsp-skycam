@@ -25,7 +25,7 @@ design and the live checklist):
 - ✅ Upstream vendored + deps
 - ✅ Capture core (`src/`) — day/night single-consumer loop
 - ✅ Container (`Dockerfile`, entrypoint, healthcheck)
-- ⏳ Orchestration (`docker-compose.yml`)
+- ✅ Orchestration (`docker-compose.yml`, self-heal on stall)
 - ⏳ Timelapse assembler + retention
 
 Not yet built/run on fresnel. Config surface: [.env.example](.env.example).

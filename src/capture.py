@@ -155,6 +155,7 @@ class Capturer:
         self._base_dir = config["output"]["base_dir"]
         self._heartbeat = config["runtime"]["heartbeat_file"]
         self._stall_timeout = float(config["runtime"].get("stall_timeout", 20))
+        self._hard_stall = float(config["runtime"].get("hard_stall_timeout", 120))
         self._url = build_url(config["stream"])
 
         os.makedirs(os.path.dirname(self._heartbeat), exist_ok=True)
@@ -206,6 +207,7 @@ class Capturer:
     def run(self):
         self._running = True
         self._reader.start()
+        start = time.time()
 
         mode, session_date = self._resolve_session()
         window_start = time.time()
@@ -243,6 +245,19 @@ class Capturer:
                     stall_logged = True
             else:
                 stall_logged = False
+
+            # Hard stall: exit nonzero so `restart: unless-stopped` restarts us
+            # with a clean process/connection. Also covers never connecting on
+            # startup (reference the launch time until the first frame arrives).
+            reference = lft if lft else start
+            if now - reference > self._hard_stall:
+                why = "no first frame" if not lft else "stream stalled"
+                print(
+                    f"[fatal] {why} for {now - reference:.0f}s; exiting for restart",
+                    flush=True,
+                )
+                self._reader.stop()
+                sys.exit(1)
 
             # Window boundary: save and begin the next window.
             if now >= next_save:

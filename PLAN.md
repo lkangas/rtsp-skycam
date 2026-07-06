@@ -159,8 +159,9 @@ Bounds disk on the NUC SSD while preserving the assembled videos.
 - **Step 3 — Container** ✅ — `Dockerfile` (python:3.13-slim + opencv-headless +
   ffmpeg), `docker/entrypoint.sh` (envsubst render), `docker/healthcheck.py`,
   RTSP-over-TCP timeout, non-root user, numba cache. *(image not yet built/run)*
-- **Step 4 — Orchestration** ⏳ — `docker-compose.yml`: data volume, `env_file`,
-  `restart: unless-stopped`, healthcheck wiring; capturer hard-stall exit.
+- **Step 4 — Orchestration** ✅ — `docker-compose.yml` (data bind mount, numba
+  cache volume, `env_file`, `restart: unless-stopped`, log rotation); capturer
+  hard-stall exit so a dead stream triggers a clean restart.
 - **Step 5 — Assembler + retention** ⏳ — `src/assemble.py`: ffmpeg day/night
   timelapses twice daily + prune of frames/videos past retention.
 - **Later — Off-box upload/sync** *(deferred)* — push videos/frames to NAS/S3.

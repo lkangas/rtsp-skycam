@@ -1,0 +1,26 @@
+# Deploy on fresnel:  docker compose up -d --build
+#
+# The ./data directory must be writable by uid 1000 (the in-container user).
+# On a standard single-user Ubuntu the first account is already uid 1000; else:
+#   mkdir -p data && sudo chown -R 1000:1000 data
+services:
+  capturer:
+    build: .
+    image: rtsp-skycam:latest
+    container_name: skycam-capturer
+    env_file: .env
+    restart: unless-stopped
+    volumes:
+      - ./data:/data                 # frames + timelapses, browsable on the host
+      - numba-cache:/cache           # persist the JIT cache across recreates
+    stop_grace_period: 15s           # let capture.py flush the current stack on SIGTERM
+    # Self-heal: healthcheck (baked into the image) reports a stale stream, and
+    # restart: unless-stopped recovers the capturer's hard-stall exit.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  numba-cache:
