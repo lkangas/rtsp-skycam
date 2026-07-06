@@ -148,18 +148,25 @@ Bounds disk on the NUC SSD while preserving the assembled videos.
 
 ## 8. Phasing
 
-- **Phase 0 — Repo + plan** ✅ (this commit series).
-- **Phase 1 — Capturer** *(after reset)*: `capture.py` single-consumer loop with
-  day (frame) / night (peak-hold) modes, `stacking.py` from upstream, config
-  template, Dockerfile, compose, `.env`. Goal: images landing in `data/day` and
-  `data/night`.
-- **Phase 2 — Assembler**: `assemble.py` ffmpeg day/night timelapse builds,
-  triggered twice daily.
-- **Phase 3 — Robustness + retention**: RTSP timeouts, healthcheck, restart,
-  retention sweep.
-- **Phase 4 — Off-box upload/sync** *(deferred)*: push videos/frames to NAS/S3.
+- **Step 0 — Repo, plan, conventions** ✅ — repo on GitHub
+  (`lkangas/rtsp-skycam`); PLAN / README / CONTRIBUTING; commit + hygiene
+  conventions adopted from the sibling `monitoring` project.
+- **Step 1 — Vendor upstream + deps** ✅ — `upstream/` submodule pinned;
+  `requirements.txt` (pip mirror, headless OpenCV).
+- **Step 2 — Capture core** ✅ — `src/stacking.py` (peak-hold from upstream),
+  `src/capture.py` (single-consumer day/night loop, reconnect, heartbeat,
+  session folders), `config/config.yaml.template`.
+- **Step 3 — Container** ✅ — `Dockerfile` (python:3.13-slim + opencv-headless +
+  ffmpeg), `docker/entrypoint.sh` (envsubst render), `docker/healthcheck.py`,
+  RTSP-over-TCP timeout, non-root user, numba cache. *(image not yet built/run)*
+- **Step 4 — Orchestration** ⏳ — `docker-compose.yml`: data volume, `env_file`,
+  `restart: unless-stopped`, healthcheck wiring; capturer hard-stall exit.
+- **Step 5 — Assembler + retention** ⏳ — `src/assemble.py`: ffmpeg day/night
+  timelapses twice daily + prune of frames/videos past retention.
+- **Later — Off-box upload/sync** *(deferred)* — push videos/frames to NAS/S3.
 
-Each phase is its own commit (or small series).
+Each step is its own commit (or small series), pushed to GitHub; PLAN/README are
+kept current as each lands.
 
 ---
 
@@ -172,8 +179,8 @@ Collected into `.env` on fresnel:
 2. **Location**: latitude / longitude / elevation + `CAM_LABEL`.
 3. **Tuning confirmation**: `SUN_LIMIT` start value, `INTERVAL` (15 s),
    `TIMELAPSE_FPS`, retention days.
-4. **Deploy path**: how this repo reaches fresnel — add a **git remote** to
-   push/pull, or copy over?
+4. **Deploy path**: repo lives at `git@github.com:lkangas/rtsp-skycam.git`;
+   clone/pull it onto fresnel and `docker compose up -d --build`.
 
 ---
 
@@ -185,7 +192,8 @@ Collected into `.env` on fresnel:
   night mode automatically; the peak-hold stack reflects whatever it outputs.
 - **Disk**: 15 s cadence = 4 images/min continuously; retention + watching the
   `./data` mount matter on a small SSD.
-- **Numba first-run JIT** adds a few seconds at start; optional `NUMBA_CACHE_DIR`
-  volume speeds restarts.
+- **Numba first-run JIT** adds a few seconds at first start; `cache=True` +
+  `NUMBA_CACHE_DIR=/cache` persist the compiled kernel, so restarts skip it
+  (mount a volume at `/cache` to persist across container recreates).
 - **birdnet-go coexistence**: unaffected — it keeps its own stream2 session; we
   add exactly one more.

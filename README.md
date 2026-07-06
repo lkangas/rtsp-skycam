@@ -18,15 +18,22 @@ Target host **fresnel** is an Intel NUC (i5, x86-64, Ubuntu). Image base:
 
 ## Status
 
-🚧 **Planning.** See [PLAN.md](PLAN.md) for the full deployment design, tuning
-choices, and phasing. Config surface is documented in [.env.example](.env.example).
-Implementation is intentionally deferred (pending usage-window reset); it will
-land phase-by-phase as separate commits.
+🚧 **In progress**, landing step-by-step (see [PLAN.md](PLAN.md) for the full
+design and the live checklist):
 
-## Quick deploy (once implemented)
+- ✅ Repo, plan & conventions
+- ✅ Upstream vendored + deps
+- ✅ Capture core (`src/`) — day/night single-consumer loop
+- ✅ Container (`Dockerfile`, entrypoint, healthcheck)
+- ⏳ Orchestration (`docker-compose.yml`)
+- ⏳ Timelapse assembler + retention
+
+Not yet built/run on fresnel. Config surface: [.env.example](.env.example).
+
+## Quick deploy (once the compose file lands)
 
 ```bash
-git clone <this-repo> && cd skycam-deploy
+git clone git@github.com:lkangas/rtsp-skycam.git && cd rtsp-skycam
 git submodule update --init          # pulls pinned pnuu/sky-cam-cv (peak-hold source)
 cp .env.example .env && $EDITOR .env # fill camera creds, location, tuning
 docker compose up -d --build

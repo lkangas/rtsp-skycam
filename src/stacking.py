@@ -14,7 +14,9 @@ import numpy as np
 from numba import njit, prange
 
 
-@njit(parallel=True)
+# cache=True persists the JIT-compiled kernel to NUMBA_CACHE_DIR so container
+# restarts skip recompilation (the one behavioural change from upstream).
+@njit(parallel=True, cache=True)
 def update_max_stack(max_stack, frame, stack_sum):
     """In-place peak-hold update.
 
