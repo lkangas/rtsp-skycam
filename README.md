@@ -28,10 +28,13 @@ design and checklist):
 - ✅ Orchestration (`docker-compose.yml`, self-heal on stall)
 - ✅ Timelapse assembler + retention (`src/assemble.py`)
 
-**Next: build & run on fresnel** with a filled-in `.env`, and confirm frames land
-and the first timelapses assemble. Config surface: [.env.example](.env.example).
+**Next: build & run on fresnel** — see [DEPLOY.md](DEPLOY.md) for the full
+runbook and first-run verification. Config surface: [.env.example](.env.example).
 
-## Quick deploy (once the compose file lands)
+## Deploy
+
+Full runbook (camera prep, verification, ops notes): **[DEPLOY.md](DEPLOY.md)**.
+The short version:
 
 ```bash
 git clone git@github.com:lkangas/rtsp-skycam.git && cd rtsp-skycam
