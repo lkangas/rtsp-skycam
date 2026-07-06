@@ -32,6 +32,11 @@ services:
     env_file: .env
     restart: unless-stopped
     entrypoint: ["/usr/bin/tini", "--", "python", "/app/src/assemble.py"]
+    # The image healthcheck tracks the capturer's frame heartbeat; the assembler
+    # is a batch loop with no heartbeat, so disable it here (else it reads
+    # "unhealthy" despite running fine).
+    healthcheck:
+      disable: true
     volumes:
       - ./data:/data
     stop_grace_period: 15s
