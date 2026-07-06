@@ -10,3 +10,4 @@ numpy>=2.1,<2.3               # kept within numba's supported NumPy range
 pillow>=11.0                   # image save (BGR->RGB) as in upstream Saver
 PyYAML>=6.0                    # config parsing
 ephem>=4.1                     # sun altitude for the day/night gate
+aiohttp>=3.10                  # skycam-web: serve latest.jpg + the WS doorbell

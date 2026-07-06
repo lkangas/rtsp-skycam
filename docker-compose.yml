@@ -46,5 +46,28 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # Serves the latest frame + a WebSocket "new frame" doorbell for a dashboard
+  # (Komakallio panel), reached via a reverse proxy / tunnel on :8092.
+  web:
+    image: rtsp-skycam:latest
+    container_name: skycam-web
+    depends_on:
+      - capturer
+    environment:
+      - SKYCAM_WEB_PORT=8092
+    entrypoint: ["/usr/bin/tini", "--", "python", "/app/src/web.py"]
+    healthcheck:
+      disable: true
+    ports:
+      - "127.0.0.1:8092:8092"   # loopback only; cloudflared reaches it here
+    volumes:
+      - ./data:/data:ro
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 volumes:
   numba-cache:

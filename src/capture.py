@@ -201,7 +201,13 @@ class Capturer:
             data, fname = latest, f"{self._label}_{ts}_frame.jpg"
 
         # OpenCV is BGR; PIL expects RGB.
-        Image.fromarray(data[:, :, ::-1]).save(os.path.join(folder, fname), quality=90)
+        img = Image.fromarray(data[:, :, ::-1])
+        img.save(os.path.join(folder, fname), quality=90)
+        # Stable "current sky" file for the web/panel feed, written atomically so
+        # readers never see a half-written frame.
+        tmp = os.path.join(self._base_dir, ".latest.tmp.jpg")
+        img.save(tmp, quality=90)
+        os.replace(tmp, os.path.join(self._base_dir, "latest.jpg"))
         print(f"[save] {mode}/{session_date}/{fname}", flush=True)
 
     def run(self):
