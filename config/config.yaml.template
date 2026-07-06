@@ -1,0 +1,29 @@
+# Rendered to the working config at container start via `envsubst` (values come
+# from .env). Edit .env, not the rendered copy. See .env.example for docs.
+stream:
+  protocol: rtsp
+  username: "${TAPO_USERNAME}"
+  password: "${TAPO_PASSWORD}"
+  camera_ip: "${CAMERA_IP}"
+  port: ${CAMERA_PORT}
+  stream: "${CAMERA_STREAM}"
+
+location:
+  latitude: ${LATITUDE}
+  longitude: ${LONGITUDE}
+  elevation: ${ELEVATION}
+  # Below this sun altitude (deg) -> night peak-hold mode; above -> day frames.
+  sun_limit: ${SUN_LIMIT}
+
+capture:
+  interval: ${INTERVAL}          # seconds per saved image (day frame / night stack)
+  label: "${CAM_LABEL}"          # filename prefix
+
+output:
+  base_dir: /data                # bind-mounted; day/<date>/ and night/<date>/ within
+
+runtime:
+  heartbeat_file: /run/skycam/heartbeat
+  # No frame for this many seconds is logged as a stall; the reader reconnects
+  # and the container healthcheck restarts us if it persists.
+  stall_timeout: 20
