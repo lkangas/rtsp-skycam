@@ -1,162 +1,191 @@
 # Deployment Plan — skycam-deploy
 
-Dockerized deployment of [pnuu/sky-cam-cv](https://github.com/pnuu/sky-cam-cv) on
-host **fresnel**, tuned for **meteor + aurora** capture from a Tapo camera.
+Dockerized deployment based on [pnuu/sky-cam-cv](https://github.com/pnuu/sky-cam-cv)
+on host **fresnel**, capturing a **24 h sky timelapse** where night frames are
+peak-hold stacks (meteors + aurora) from a Tapo camera.
 
 > Status: **plan only**. Implementation is deferred until the usage window
 > resets. This document is the agreed design; code lands in later phases.
 
 ---
 
-## 1. What the upstream app does (and why it shapes the design)
+## 1. Core idea — one consumer, day/night modes
 
-`sky-cam-cv` (Python 3.13) pulls an **RTSP stream** from a Tapo camera and runs
-**Numba-accelerated peak-hold stacking** — for each pixel it keeps the brightest
-value seen across a stack, which is what makes meteors, fireballs and aurora pop
-out of the night sky. Output is one stacked JPG per stack interval.
+A **single** process holds **one** RTSP connection to the camera and, every
+`INTERVAL` seconds (15 s), saves exactly one image:
 
-Key runtime facts that drive our containerization choices:
+| Period | Trigger | What's saved |
+|---|---|---|
+| **Day** | sun **above** `SUN_LIMIT` | the latest single frame (plain grab) |
+| **Night** | sun **below** `SUN_LIMIT` | a **peak-hold stack** over the last `INTERVAL` seconds |
 
-| Upstream behaviour | Implication for Docker |
-|---|---|
-| Gated by **sun altitude** (PyEphem): exits immediately if the sun is above `sun_limit`, otherwise runs until sunrise then exits. | Not a long-lived process by itself. We need a **supervisor loop** to re-launch it, replacing cron. |
-| Driven by **cron** (`bin/sky-cam-cv.py <config>`) with a **PID file** to prevent overlap. | Cron + PID file become unnecessary — one process per container. The supervisor owns lifecycle. |
-| A **bash watchdog** (`bin/sky-cam-cv_wathcdog.sh`) kills the process when a flaky network stalls `VideoCapture.read()`. | Replaced by **RTSP read timeouts + an output-freshness watchdog + Docker healthcheck + `restart: unless-stopped`**. |
-| Dependencies via **conda** (`ephem numba pillow py-opencv pyyaml`). | We use **pip + `opencv-python-headless`** on `python:3.13-slim` (your choice) — smaller, no GUI libs. |
-| Config is a single **YAML** file; RTSP URL built from `username/password/camera_ip/port/stream`. | Secrets injected at runtime via **`.env` + envsubst** into a rendered config — nothing sensitive baked into the image or committed. |
-| Filenames/timestamps in **UTC**; sun calc uses **lat/lon/elevation**. | Container `TZ=UTC`; location comes from `.env`. |
+Then, **twice a day** (around the sunrise/sunset transitions), a separate step
+assembles the accumulated frames with **ffmpeg** into a **day timelapse** and a
+**night timelapse** video.
 
-Confirmed target: **Intel NUC, i5, Ubuntu (x86-64)** — full wheel support for
-`opencv-python-headless`, `numba`/`llvmlite` on Python 3.13. No ARM caveats.
+Consequences of this design:
+
+- **Only one camera connection** (plus the existing **birdnet-go** on stream2) →
+  **2 sessions total, always**, well under any Tapo limit. No restreamer, no
+  concurrency juggling.
+- The **night timelapse frames *are* the meteor/aurora captures** — each 15 s
+  peak-hold stack serves both purposes.
+- We **adapt upstream's capture loop** (fork/patch) rather than running it
+  untouched: upstream *exits* in daylight, whereas we switch to plain-frame mode
+  and keep running across the day/night boundary. Upstream's **Numba peak-hold
+  core is reused verbatim** as the night branch (with attribution).
+
+Confirmed: **Intel NUC i5 / Ubuntu / x86-64**; camera **RTSP already working**;
+**full-res stream1** for capture; birdnet-go already reads stream2 audio.
 
 ---
 
-## 2. Target repository layout
+## 2. Architecture
+
+Two units, sharing one image and one `./data` volume:
+
+```
+capturer   (always-on, 1 RTSP connection)
+   every 15 s:
+      read frame(s)
+      if sun below SUN_LIMIT:  peak-hold stack → save to data/night/<date>/
+      else:                    save latest frame → save to data/day/<date>/
+   writes a heartbeat for the healthcheck; restarts on stream stall
+
+assembler  (runs ~twice/day, at day↔night transitions)
+   ffmpeg data/day/<date>/*.jpg   → data/video/day/<date>.mp4
+   ffmpeg data/night/<date>/*.jpg → data/video/night/<date>.mp4
+   prune frames/videos past retention
+```
+
+The assembler can be a second short-lived container, a cron-like tick inside the
+capturer, or triggered by the capturer when it detects a sun transition —
+decided at implementation. Either way it's driven off the same sun calc so the
+"day" and "night" segments line up with the mode switches.
+
+---
+
+## 3. Target repository layout
 
 ```
 skycam-deploy/
 ├── README.md
 ├── PLAN.md                     ← this file
 ├── .gitignore
-├── .env.example                ← documents every config/secret knob
+├── .env.example                ← every config/secret knob
 ├── requirements.txt            ← pinned pip deps
-├── Dockerfile                  ← python:3.13-slim + opencv-headless
-├── docker-compose.yml          ← service, volume, restart, healthcheck
+├── Dockerfile                  ← python:3.13-slim + opencv-headless + ffmpeg
+├── docker-compose.yml
+├── src/
+│   ├── capture.py               ← the single consumer (day/night modes)
+│   ├── stacking.py              ← peak-hold core reused from upstream (attributed)
+│   └── assemble.py              ← ffmpeg timelapse builder + retention sweep
 ├── config/
-│   └── tapo.yaml.template       ← YAML with ${ENV} placeholders
-├── docker/
-│   ├── entrypoint.sh            ← render config from template, exec supervisor
-│   └── supervisor.py            ← re-launch loop + watchdog + retention + heartbeat
-├── upstream/                    ← git submodule → pnuu/sky-cam-cv @ pinned SHA
-└── data/                        ← (gitignored) captured images, bind-mounted
+│   └── config.yaml.template     ← ${ENV} placeholders
+├── upstream/                    ← git submodule → pnuu/sky-cam-cv @ pinned SHA (reference/source)
+└── data/                        ← (gitignored) frames + videos, bind-mounted
 ```
 
-**Upstream is vendored as a pinned git submodule** — we run the author's code
-unmodified and update deliberately, rather than forking. No patches to upstream
-are required (secrets and RTSP timeouts are handled from the outside).
+Upstream is kept as a **pinned submodule for reference and attribution**; the
+peak-hold logic is lifted into `src/stacking.py` so our loop can call it directly
+in the night branch.
 
 ---
 
-## 3. How it runs in a container
-
-Replacing cron + watchdog with one small supervisor:
+## 4. Data layout on disk
 
 ```
-entrypoint.sh:
-  envsubst < config/tapo.yaml.template > /run/tapo.yaml   # inject secrets/location
-  exec python docker/supervisor.py
-
-supervisor.py loop:
-  while running:
-      touch /run/heartbeat                 # for Docker HEALTHCHECK
-      run: python upstream/bin/sky-cam-cv.py /run/tapo.yaml
-           ├─ daytime  → exits fast        → sleep POLL_INTERVAL, retry
-           ├─ sunrise  → exits after night → sleep POLL_INTERVAL, retry
-           └─ crash    → exits nonzero      → short backoff, retry
-      (watchdog thread) while a capture is active, if no new file appears
-           in /data for 3 × STACK_LENGTH seconds → kill child (stream hung),
-           loop restarts it
-      (once/day) prune /data of files older than RETENTION_DAYS
+data/
+├── day/<YYYY-MM-DD>/<label>_<time>_UTC.jpg          plain frames, one per 15 s
+├── night/<YYYY-MM-DD>/<label>_<time>_UTC.jpg        15 s peak-hold stacks
+└── video/
+    ├── day/<YYYY-MM-DD>.mp4
+    └── night/<YYYY-MM-DD>.mp4
 ```
 
-Everything the NUC needs is `docker compose up -d --build`; the container
-self-schedules around night/day and self-heals on network hiccups.
+Night spans midnight; a night is labelled by the **date it began** (evening).
+Timestamps in **UTC** (matches upstream); container `TZ=UTC`.
 
 ---
 
-## 4. Tailoring for **meteors + aurora** (proposed defaults, all env-tunable)
+## 5. Tuning (proposed defaults, all env-configurable)
 
-| Knob | Upstream default | Proposed | Reason |
-|---|---|---|---|
-| `stream` | `stream2` (substream) | **`stream1`** (main, full-res) | Detail matters for faint meteors/aurora; an i5 NUC handles Tapo's ~15fps at full res. Substream is lower-res/heavily compressed. Falls back easily if CPU-bound. |
-| RTSP transport | (default UDP) | **TCP + read timeout** via `OPENCV_FFMPEG_CAPTURE_OPTIONS=rtsp_transport;tcp\|timeout;5000000` | Tapo RTSP is far more reliable over TCP; the timeout turns a network stall into a clean error the supervisor can recover from — the root-cause fix the upstream bash watchdog only mops up after. |
-| `stack_length` | 60 s | **60 s** (kept) | Short stacks keep a fireball from washing out and preserve timing; good for both targets. Longer "all-night" summary stacks are a Phase 5 idea. |
-| `sun_limit` | −5.0° | **−6° to −9°** (env, start −8) | Darker sky for faint aurora/meteors. ⚠️ At lat ~68.5° the sun never dips low in summer (polar day) → the app will exit every cycle and capture nothing until the dark season. Expected, not a bug. |
-| `location` | lat 68.5 / lon 27.5 / elev 170 | **from `.env`** | Your actual site; drives the sun gate. |
-| Filename prefix | `c325_north_` | **env `CAM_LABEL`** | So captures are self-describing per camera. |
-
----
-
-## 5. Add-ons
-
-**Included now (per your selection):**
-
-- **Auto-restart on hang** — layered: RTSP read timeout (prevents most stalls) +
-  supervisor output-freshness watchdog + Docker `HEALTHCHECK` reading the
-  heartbeat file + `restart: unless-stopped`. Fully replaces the upstream bash
-  watchdog and cron re-launch.
-- **Retention / cleanup** — nightly prune of `/data` older than `RETENTION_DAYS`
-  (default 14; `0` = keep forever) to bound disk on the NUC.
-
-**Deferred to future phases (your call):**
-
-- **Off-box upload/sync** — push each night's captures to a NAS/S3/remote. Left
-  as a documented seam (a post-night hook in the supervisor) so it slots in later.
-- **Nightly timelapse / all-night summary stack** — per-night video or combined
-  peak-hold image.
+| Knob | Proposed | Reason |
+|---|---|---|
+| `CAMERA_STREAM` | `stream1` (full res) | Detail for meteors/aurora; i5 NUC handles one full-res decode. One connection only, so no bandwidth conflict. |
+| RTSP transport | TCP + read timeout (`OPENCV_FFMPEG_CAPTURE_OPTIONS=rtsp_transport;tcp\|timeout;5000000`) | Reliable Tapo RTSP; a stall becomes a recoverable error, not a hang. |
+| `INTERVAL` | 15 s | One saved image per 15 s, day and night — uniform timelapse cadence. |
+| Night stack | peak-hold over each 15 s window | Reuses upstream Numba core; catches meteors/aurora within the window. |
+| `SUN_LIMIT` | −8° (env) | Darker sky for faint targets. ⚠️ At lat ~68.5° never reached near midsummer (polar day) → night mode simply never triggers; day timelapse continues. Not a bug. |
+| `TIMELAPSE_FPS` | 25 | Assembly framerate. 15 s cadence → ~1 min of video per ~6 h of frames. |
+| `CAM_LABEL` | env | Filename prefix so captures are self-describing. |
+| `location` | from `.env` | Site lat/lon/elev drives the sun calc. |
 
 ---
 
-## 6. Phasing
+## 6. Robustness (replaces upstream cron + bash watchdog)
+
+- **RTSP read timeout** (above) — root-cause fix for network stalls.
+- **Capturer heartbeat file** + Docker `HEALTHCHECK` + `restart: unless-stopped`
+  → a wedged capturer is detected and restarted automatically.
+- **Self-relaunch on stream error** with short backoff inside `capture.py`.
+
+No PID file needed (one process per container).
+
+---
+
+## 7. Retention
+
+Nightly sweep (in the assembler):
+
+- `FRAME_RETENTION_DAYS` (default 14; `0` = keep) — prune individual JPGs.
+- `VIDEO_RETENTION_DAYS` (default 0 = keep forever) — the finished timelapses are
+  small; keep them long.
+
+Bounds disk on the NUC SSD while preserving the assembled videos.
+
+---
+
+## 8. Phasing
 
 - **Phase 0 — Repo + plan** ✅ (this commit series).
-- **Phase 1 — Core dockerization** *(after window reset)*: submodule upstream,
-  `requirements.txt`, `Dockerfile`, `config/tapo.yaml.template`, `entrypoint.sh`,
-  `supervisor.py` (sun-gated re-launch loop), `docker-compose.yml`, `.env`.
-  Goal: container captures stacks at night to `./data`.
-- **Phase 2 — Robustness**: RTSP timeouts, freshness watchdog, healthcheck,
-  restart policy. Goal: survives network drops unattended.
-- **Phase 3 — Retention**: nightly cleanup sweep.
-- **Phase 4 — Upload/sync** *(deferred)*.
-- **Phase 5 — Timelapse/summary** *(deferred)*.
+- **Phase 1 — Capturer** *(after reset)*: `capture.py` single-consumer loop with
+  day (frame) / night (peak-hold) modes, `stacking.py` from upstream, config
+  template, Dockerfile, compose, `.env`. Goal: images landing in `data/day` and
+  `data/night`.
+- **Phase 2 — Assembler**: `assemble.py` ffmpeg day/night timelapse builds,
+  triggered twice daily.
+- **Phase 3 — Robustness + retention**: RTSP timeouts, healthcheck, restart,
+  retention sweep.
+- **Phase 4 — Off-box upload/sync** *(deferred)*: push videos/frames to NAS/S3.
 
-Each phase is its own commit (or small series) so progress is reviewable.
-
----
-
-## 7. Inputs needed at implementation time (non-blocking for this plan)
-
-Collected into `.env` on fresnel — none block writing the plan:
-
-1. **Camera**: IP, and the **Tapo "camera account"** username/password (Tapo
-   requires creating a dedicated RTSP account in the Tapo app; the main cloud
-   login does *not* work for RTSP). Has RTSP been enabled on the camera?
-2. **Location**: latitude / longitude / elevation of the site, and `CAM_LABEL`.
-3. **Tuning**: confirm `sun_limit` start value, `stack_length`, and `stream1`
-   vs `stream2`.
-4. **Retention**: `RETENTION_DAYS` (proposed 14).
-5. **Deploy path**: how this repo reaches fresnel — add a **git remote** to
-   push/pull, or copy over? (We can set a remote whenever you're ready.)
+Each phase is its own commit (or small series).
 
 ---
 
-## 8. Risks / notes
+## 9. Inputs needed at implementation time (non-blocking)
 
-- **Polar day**: near midsummer at high latitude, `sun_limit` is never reached —
-  zero captures by design. Worth remembering before assuming a misconfiguration.
-- **CPU**: full-res peak-hold stacking is light but not free; if the i5 runs hot,
-  drop to `stream2` or lower framerate. Easy env flip.
-- **numba first-run JIT**: adds a few seconds at container start; optionally cache
-  via a `NUMBA_CACHE_DIR` volume to speed restarts.
-- **Disk**: one JPG per `stack_length` all night; retention + monitoring the
-  `./data` mount matter on a small NUC SSD.
+Collected into `.env` on fresnel:
+
+1. **Camera**: IP + the Tapo **camera-account** username/password (RTSP already
+   works, so these exist).
+2. **Location**: latitude / longitude / elevation + `CAM_LABEL`.
+3. **Tuning confirmation**: `SUN_LIMIT` start value, `INTERVAL` (15 s),
+   `TIMELAPSE_FPS`, retention days.
+4. **Deploy path**: how this repo reaches fresnel — add a **git remote** to
+   push/pull, or copy over?
+
+---
+
+## 10. Risks / notes
+
+- **Polar day**: near midsummer at high latitude the sun never dips below
+  `SUN_LIMIT` → night mode never triggers; only the day timelapse runs. Expected.
+- **Night frames are exposures the camera gives us** — a Tapo may switch to IR /
+  night mode automatically; the peak-hold stack reflects whatever it outputs.
+- **Disk**: 15 s cadence = 4 images/min continuously; retention + watching the
+  `./data` mount matter on a small SSD.
+- **Numba first-run JIT** adds a few seconds at start; optional `NUMBA_CACHE_DIR`
+  volume speeds restarts.
+- **birdnet-go coexistence**: unaffected — it keeps its own stream2 session; we
+  add exactly one more.
