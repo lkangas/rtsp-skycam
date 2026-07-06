@@ -42,3 +42,19 @@ git submodule update --init          # pulls pinned pnuu/sky-cam-cv (peak-hold s
 cp .env.example .env && $EDITOR .env # fill camera creds, location, tuning
 docker compose up -d --build
 ```
+
+## Optional: serve the latest frame
+
+An opt-in `web` service (its own container) serves the most recent frame plus a
+minimal live viewer, so you can put it behind your own reverse proxy or tunnel —
+there's no machine-specific config in the repo. On `127.0.0.1:8092` it exposes:
+
+- `GET /latest.jpg` — the current frame (`Cache-Control: no-cache` + ETag)
+- `GET /ws` — a WebSocket that emits `{"type":"imageUpdate"}` on every new frame
+- `GET /` — a viewer: the frame scaled to the viewport, refreshed live over the
+  WebSocket
+
+Enable it with `COMPOSE_PROFILES=hosting` in `.env` (or
+`docker compose --profile hosting up -d`), then point your proxy/tunnel at
+`:8092`. The `{"type":"imageUpdate"}` signal is also exactly what the
+[Komakallio panel](https://github.com/komakallio/panel)'s `push_ws` consumes.

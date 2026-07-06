@@ -6,10 +6,12 @@ Published on :8092 for a reverse proxy / tunnel to serve it publicly:
   GET /latest.jpg  current frame; no-cache + ETag/Last-Modified so conditional
                    GETs return 304 (aiohttp FileResponse handles this)
   GET /ws          WebSocket emitting {"type":"imageUpdate"} on each rewrite
-  GET /            minimal placeholder viewer (the real browser view is deferred)
+  GET /            live viewer: latest.jpg scaled to the viewport, refreshed on
+                   each imageUpdate
 
-The Komakallio panel consumes /latest.jpg as an `http_image` source and /ws as
-its `push_ws` doorbell (immediate refetch on imageUpdate, polling as fallback).
+The /ws message is a plain {"type":"imageUpdate"} "new frame" signal any client
+can subscribe to — the bundled viewer at /, or a dashboard's push_ws (e.g. the
+Komakallio panel consumes /latest.jpg as an http_image + /ws as its push_ws).
 """
 
 import asyncio
@@ -21,18 +23,13 @@ DATA_DIR = os.environ.get("SKYCAM_DATA_DIR", "/data")
 LATEST = os.path.join(DATA_DIR, "latest.jpg")
 PORT = int(os.environ.get("SKYCAM_WEB_PORT", "8092"))
 POLL = 1.0
-
-PLACEHOLDER = """<!doctype html><meta charset=utf-8>
-<title>all-sky</title>
-<meta http-equiv=refresh content=15>
-<style>body{margin:0;background:#000}img{display:block;max-width:100vw;max-height:100vh;margin:auto}</style>
-<img src="/latest.jpg" alt="latest sky frame">
-<!-- placeholder; the nicer browser view is deferred -->
-"""
+INDEX = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "index.html")
 
 
 async def handle_index(request):
-    return web.Response(text=PLACEHOLDER, content_type="text/html")
+    if os.path.exists(INDEX):
+        return web.FileResponse(INDEX)
+    return web.Response(text="skycam: see /latest.jpg", content_type="text/plain")
 
 
 async def handle_latest(request):
@@ -49,7 +46,7 @@ async def handle_ws(request):
     await ws.prepare(request)
     request.app["clients"].add(ws)
     try:
-        async for msg in ws:  # we don't expect inbound messages; just keep open
+        async for msg in ws:  # no inbound messages expected; just keep it open
             if msg.type in (WSMsgType.ERROR, WSMsgType.CLOSE, WSMsgType.CLOSING):
                 break
     finally:

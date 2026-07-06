@@ -46,11 +46,13 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  # Serves the latest frame + a WebSocket "new frame" doorbell for a dashboard
-  # (Komakallio panel), reached via a reverse proxy / tunnel on :8092.
+  # OPTIONAL — serve latest.jpg + a live viewer + a WebSocket "new frame" doorbell
+  # for your own reverse proxy / tunnel to expose. Off by default; enable with
+  # COMPOSE_PROFILES=hosting in .env (or `docker compose --profile hosting up -d`).
   web:
     image: rtsp-skycam:latest
     container_name: skycam-web
+    profiles: ["hosting"]
     depends_on:
       - capturer
     environment:
