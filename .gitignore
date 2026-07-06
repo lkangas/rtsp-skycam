@@ -30,6 +30,10 @@ __pycache__/
 venv/
 *.egg-info/
 
+# Local-only notes — integration/ops plans that aren't part of the stacker
+# software itself; kept out of the public repo.
+docs/local/
+
 # Editor / OS
 .idea/
 .vscode/
