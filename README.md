@@ -18,17 +18,18 @@ Target host **fresnel** is an Intel NUC (i5, x86-64, Ubuntu). Image base:
 
 ## Status
 
-🚧 **In progress**, landing step-by-step (see [PLAN.md](PLAN.md) for the full
-design and the live checklist):
+✅ **Code-complete** — all core steps landed (see [PLAN.md](PLAN.md) for the full
+design and checklist):
 
 - ✅ Repo, plan & conventions
 - ✅ Upstream vendored + deps
 - ✅ Capture core (`src/`) — day/night single-consumer loop
 - ✅ Container (`Dockerfile`, entrypoint, healthcheck)
 - ✅ Orchestration (`docker-compose.yml`, self-heal on stall)
-- ⏳ Timelapse assembler + retention
+- ✅ Timelapse assembler + retention (`src/assemble.py`)
 
-Not yet built/run on fresnel. Config surface: [.env.example](.env.example).
+**Next: build & run on fresnel** with a filled-in `.env`, and confirm frames land
+and the first timelapses assemble. Config surface: [.env.example](.env.example).
 
 ## Quick deploy (once the compose file lands)
 

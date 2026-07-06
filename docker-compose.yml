@@ -22,5 +22,24 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # Builds day/night timelapses and prunes old frames/videos. Same image, but
+  # skips the config-render entrypoint and runs the assembler loop directly.
+  assembler:
+    image: rtsp-skycam:latest
+    container_name: skycam-assembler
+    depends_on:
+      - capturer
+    env_file: .env
+    restart: unless-stopped
+    entrypoint: ["/usr/bin/tini", "--", "python", "/app/src/assemble.py"]
+    volumes:
+      - ./data:/data
+    stop_grace_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 volumes:
   numba-cache:

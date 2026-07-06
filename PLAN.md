@@ -162,12 +162,17 @@ Bounds disk on the NUC SSD while preserving the assembled videos.
 - **Step 4 — Orchestration** ✅ — `docker-compose.yml` (data bind mount, numba
   cache volume, `env_file`, `restart: unless-stopped`, log rotation); capturer
   hard-stall exit so a dead stream triggers a clean restart.
-- **Step 5 — Assembler + retention** ⏳ — `src/assemble.py`: ffmpeg day/night
-  timelapses twice daily + prune of frames/videos past retention.
+- **Step 5 — Assembler + retention** ✅ — `src/assemble.py` (ffmpeg day/night
+  timelapses when a session goes quiet ≈ twice daily, idempotent rebuilds) +
+  retention prune of frames/videos; wired as a second compose service.
 - **Later — Off-box upload/sync** *(deferred)* — push videos/frames to NAS/S3.
 
 Each step is its own commit (or small series), pushed to GitHub; PLAN/README are
 kept current as each lands.
+
+**All core steps are code-complete.** The remaining validation is real-world:
+build and run on fresnel with a filled-in `.env`, confirm frames land and the
+first day/night timelapses assemble.
 
 ---
 
