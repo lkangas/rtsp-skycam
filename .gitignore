@@ -1,0 +1,19 @@
+# Secrets / local config
+.env
+*.local.yaml
+
+# Captured output
+/data/
+/output/
+*.jpg
+*.jpeg
+*.png
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# Editor / OS
+.DS_Store
+Thumbs.db
