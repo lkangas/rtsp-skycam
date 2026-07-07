@@ -58,3 +58,26 @@ Enable it with `COMPOSE_PROFILES=hosting` in `.env` (or
 `docker compose --profile hosting up -d`), then point your proxy/tunnel at
 `:8092`. The `{"type":"imageUpdate"}` signal is also exactly what the
 [Komakallio panel](https://github.com/komakallio/panel)'s `push_ws` consumes.
+
+## Performance
+
+The night peak-hold is the one heavy path, and it's tuned to stay light:
+
+- **Fused peak-hold kernel** ([src/stacking.py](src/stacking.py)) folds the
+  per-channel brightness sum into the pixel loop, dropping a separate
+  `np.sum(axis=-1)` pass + a 4 MP allocation per frame — ~3× faster and
+  bit-for-bit identical to the two-pass form.
+- **`NUMBA_NUM_THREADS=2`** (default) — the stack is memory-bandwidth bound, so a
+  couple of threads run faster *and* cooler than all cores. Tunable in `.env`.
+
+Measured on the reference host (Intel i7-10710U, 4 MP H.264 @ ~15 fps):
+
+| capturer CPU | before | after |
+|---|---|---|
+| **night** (peak-hold) | ~526% (≈5.3 cores) | **~110%** (≈1.1 cores) |
+| **day** (single frame) | ~66% | ~66% |
+
+No frames are dropped — the fused kernel sustains ~160 fps versus the ~15 fps
+needed. Profiling notes: **decode is cheap** (~22% of a core in software), and
+hardware VAAPI/Quick Sync decode measured *worse* for this low-bitrate stream, so
+it isn't used; the remaining cost is the per-frame decode + colour-convert path.
