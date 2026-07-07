@@ -67,14 +67,15 @@ The night peak-hold is the one heavy path, and it's tuned to stay light:
   per-channel brightness sum into the pixel loop, dropping a separate
   `np.sum(axis=-1)` pass + a 4 MP allocation per frame — ~3× faster and
   bit-for-bit identical to the two-pass form.
-- **`NUMBA_NUM_THREADS=2`** (default) — the stack is memory-bandwidth bound, so a
-  couple of threads run faster *and* cooler than all cores. Tunable in `.env`.
+- **`NUMBA_NUM_THREADS=1`** (default) — the stack is memory-bandwidth bound, so
+  one thread runs faster *and* cooler than all cores (it sustains far above the
+  stream rate here). Tunable in `.env`.
 
-Measured on the reference host (Intel i7-10710U, 4 MP H.264 @ ~15 fps):
+Measured on the reference host (Intel i7-10710U, 4 MP H.264 @ ~22 fps):
 
 | capturer CPU | before | after |
 |---|---|---|
-| **night** (peak-hold) | ~526% (≈5.3 cores) | **~110%** (≈1.1 cores) |
+| **night** (peak-hold) | ~526% (≈5.3 cores) | **~90%** (≈0.9 core) |
 | **day** (single frame) | ~66% | ~66% |
 
 No frames are dropped — the fused kernel sustains ~160 fps versus the ~15 fps

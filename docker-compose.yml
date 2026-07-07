@@ -10,9 +10,9 @@ services:
     container_name: skycam-capturer
     env_file: .env
     environment:
-      # Peak-hold is memory-bandwidth bound: ~2 threads is the sweet spot; more
-      # run slower AND hotter. Only needs to keep up with the stream (~15 fps).
-      - NUMBA_NUM_THREADS=${NUMBA_NUM_THREADS:-2}
+      # Peak-hold is memory-bandwidth bound: 1 thread already sustains far above
+      # the stream rate, and more threads run slower AND hotter. Tunable in .env.
+      - NUMBA_NUM_THREADS=${NUMBA_NUM_THREADS:-1}
     restart: unless-stopped
     volumes:
       - ./data:/data                 # frames + timelapses, browsable on the host

@@ -12,8 +12,8 @@ feature accumulate into a single image over the stacking window.
 Behaviour is identical to upstream, but the per-channel brightness sum is fused
 into the pixel loop instead of a separate ``np.sum(frame, axis=-1)`` pass — that
 avoids a full 4 MP allocation + read per frame and is ~3x faster. The op is
-memory-bandwidth bound, so it wants only a couple of threads: set
-``NUMBA_NUM_THREADS`` to ~2 (more threads run slower *and* hotter).
+memory-bandwidth bound, so it wants very few threads: ``NUMBA_NUM_THREADS=1``
+already sustains far above typical stream rates; more run slower *and* hotter.
 """
 
 import numpy as np
