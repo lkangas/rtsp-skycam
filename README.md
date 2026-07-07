@@ -1,7 +1,7 @@
-# skycam-deploy
+# rtsp-skycam
 
-Dockerized **24 h sky timelapse** from a TP-Link Tapo RTSP camera, deployed on
-host **fresnel**. Built on the peak-hold stacking core from
+Dockerized **24 h sky timelapse** from a TP-Link Tapo (or any) RTSP camera. Built
+on the peak-hold stacking core from
 [pnuu/sky-cam-cv](https://github.com/pnuu/sky-cam-cv).
 
 A single process holds one RTSP connection and saves an image every 15 s:
@@ -11,14 +11,14 @@ A single process holds one RTSP connection and saves an image every 15 s:
 
 Twice a day it assembles the frames into a **day timelapse** and a **night
 timelapse** with ffmpeg. One camera connection total, so it coexists cleanly with
-the **birdnet-go** instance already reading stream2 audio on fresnel.
+another consumer (e.g. birdnet-go) already reading the camera's stream2.
 
-Target host **fresnel** is an Intel NUC (i5, x86-64, Ubuntu). Image base:
+Runs on any x86-64 Linux host with Docker. Image base:
 `python:3.13-slim` + `opencv-python-headless` + `ffmpeg`.
 
 ## Status
 
-✅ **Live on fresnel** — capturing `stream1` from the Tapo, healthy, frames landing
+✅ **Deployed and capturing** `stream1` from the camera, healthy, frames landing
 under `data/`. All core steps done (see [PLAN.md](PLAN.md) for the full design):
 
 - ✅ Repo, plan & conventions
@@ -28,8 +28,8 @@ under `data/`. All core steps done (see [PLAN.md](PLAN.md) for the full design):
 - ✅ Orchestration (`docker-compose.yml`, self-heal on stall)
 - ✅ Timelapse assembler + retention (`src/assemble.py`)
 
-**Next: build & run on fresnel** — see [DEPLOY.md](DEPLOY.md) for the full
-runbook and first-run verification. Config surface: [.env.example](.env.example).
+**To deploy** — see [DEPLOY.md](DEPLOY.md) for the full runbook and first-run
+verification. Config surface: [.env.example](.env.example).
 
 ## Deploy
 
