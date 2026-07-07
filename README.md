@@ -70,13 +70,17 @@ The night peak-hold is the one heavy path, and it's tuned to stay light:
 - **`NUMBA_NUM_THREADS=1`** (default) — the stack is memory-bandwidth bound, so
   one thread runs faster *and* cooler than all cores (it sustains far above the
   stream rate here). Tunable in `.env`.
+- **Snapshot day capture** — day needs only one frame per interval, so it grabs a
+  short-lived full-res snapshot each interval instead of decoding the stream
+  continuously, staying near-idle in daylight. (Night decodes continuously for
+  the peak-hold.)
 
 Measured on the reference host (Intel i7-10710U, 4 MP H.264 @ ~22 fps):
 
 | capturer CPU | before | after |
 |---|---|---|
 | **night** (peak-hold) | ~526% (≈5.3 cores) | **~90%** (≈0.9 core) |
-| **day** (single frame) | ~66% | ~66% |
+| **day** (snapshot) | ~66% | **~2%** (near-idle) |
 
 No frames are dropped — the fused kernel sustains ~160 fps versus the ~15 fps
 needed. Profiling notes: **decode is cheap** (~22% of a core in software), and
