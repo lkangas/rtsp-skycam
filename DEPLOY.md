@@ -1,7 +1,7 @@
-# Deploying on fresnel
+# Deploying
 
-Runbook for the Intel NUC (`fresnel`, Ubuntu x86-64). Assumes Docker Engine +
-the Compose plugin are installed.
+Runbook for any x86-64 Linux host with Docker Engine + the Compose plugin
+installed.
 
 ## 1. Prerequisites on the camera
 
@@ -9,10 +9,10 @@ the Compose plugin are installed.
   *Advanced Settings → Camera Account*). The TP-Link cloud login does **not**
   work for RTSP.
 - Note the camera's LAN IP and that account's username/password.
-- `birdnet-go` already uses `stream2` (audio). This deployment uses **one** more
-  RTSP session (`stream1` by default). If the Tapo refuses the extra connection,
-  either point this at `stream2` too (`CAMERA_STREAM=stream2`) or check the
-  camera's max-client setting.
+- This deployment uses one RTSP session (`stream1` by default). If another
+  consumer already uses the camera (e.g. an audio analyser on `stream2`) and the
+  Tapo refuses the extra connection, point this at `stream2` too
+  (`CAMERA_STREAM=stream2`) or check the camera's max-client setting.
 
 ## 2. Get the code
 
@@ -84,9 +84,10 @@ after a session goes quiet (≈ after dusk / dawn).
   is expected, not a fault.
 - **Disk**: frames are pruned after `FRAME_RETENTION_DAYS` (default 14); videos
   kept per `VIDEO_RETENTION_DAYS` (default 0 = forever). Watch the `./data`
-  mount on the NUC SSD.
-- **CPU**: full-res `stream1` peak-hold is light on an i5, but if it runs hot,
-  set `CAMERA_STREAM=stream2` and rebuild.
+  mount on the host's disk.
+- **CPU**: the peak-hold is tuned to run light (see the README's Performance
+  section); day capture is near-idle. If it still runs hot, lower
+  `NUMBA_NUM_THREADS` or set `CAMERA_STREAM=stream2` and rebuild.
 
 ## 8. Teardown
 
