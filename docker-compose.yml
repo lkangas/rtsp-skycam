@@ -9,6 +9,10 @@ services:
     image: rtsp-skycam:latest
     container_name: skycam-capturer
     env_file: .env
+    environment:
+      # Peak-hold is memory-bandwidth bound: ~2 threads is the sweet spot; more
+      # run slower AND hotter. Only needs to keep up with the stream (~15 fps).
+      - NUMBA_NUM_THREADS=${NUMBA_NUM_THREADS:-2}
     restart: unless-stopped
     volumes:
       - ./data:/data                 # frames + timelapses, browsable on the host
