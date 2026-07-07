@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""skycam capturer — a single RTSP consumer with day/night modes.
+"""skycam capturer — a Tapo/RTSP consumer with day/night modes.
 
 Every ``interval`` seconds exactly one image is written:
 
@@ -14,8 +14,10 @@ Images are grouped into per-session folders::
 where ``session_date`` is the UTC date on which the current day- or night-session
 began, so a night crossing midnight stays in one folder (the evening's date).
 
-One RTSP connection total (coexists with e.g. birdnet-go on the substream). The
-night branch reuses the peak-hold kernel from pnuu/sky-cam-cv (see stacking.py).
+Night holds **one continuous RTSP connection** and peak-holds every frame. Day
+only needs one frame per interval, so it grabs a **short-lived full-res snapshot**
+each interval and stays near-idle between grabs (no continuous decode). The night
+branch reuses the peak-hold kernel from pnuu/sky-cam-cv (see stacking.py).
 
 Usage: ``python capture.py [config.yaml]`` (default: $SKYCAM_CONFIG or
 /run/skycam/config.yaml).
@@ -160,7 +162,6 @@ class Capturer:
 
         os.makedirs(os.path.dirname(self._heartbeat), exist_ok=True)
 
-        self._reader = StreamReader(self._url)
         self._running = False
 
         # Session state: mode + the UTC date the session began.
@@ -186,7 +187,7 @@ class Capturer:
             print("[save] night window had no frames; skipping", flush=True)
             return
         if mode == "day" and latest is None:
-            print("[save] day window had no frames; skipping", flush=True)
+            print("[save] day window had no frame; skipping", flush=True)
             return
 
         ts = dt.datetime.fromtimestamp(window_start, dt.timezone.utc).strftime(
@@ -210,12 +211,73 @@ class Capturer:
         os.replace(tmp, os.path.join(self._base_dir, "latest.jpg"))
         print(f"[save] {mode}/{session_date}/{fname}", flush=True)
 
+    def _snapshot(self):
+        """Open a short-lived connection, grab one fresh full-res frame, close."""
+        cap = cv2.VideoCapture(self._url, cv2.CAP_FFMPEG)
+        try:
+            try:
+                cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            except Exception:
+                pass
+            if not cap.isOpened():
+                return None
+            frame = None
+            good = 0
+            deadline = time.time() + 6.0
+            # Read a few frames so we return a fresh, fully-decoded one (not a
+            # stale/partial frame from the moment the connection opened).
+            while time.time() < deadline and good < 3:
+                ok, f = cap.read()
+                if ok and f is not None:
+                    frame = f
+                    good += 1
+                elif frame is not None:
+                    break
+            return frame
+        finally:
+            cap.release()
+
     def run(self):
         self._running = True
-        self._reader.start()
-        start = time.time()
+        while self._running:
+            mode, session_date = self._resolve_session()
+            if mode == "night":
+                self._run_night(session_date)
+            else:
+                self._run_day(session_date)
 
-        mode, session_date = self._resolve_session()
+    def _run_day(self, session_date):
+        """Grab one full-res snapshot per interval; near-idle between grabs."""
+        last_ok = time.time()
+        next_save = time.time()  # grab immediately on entering day
+        while self._running:
+            now = time.time()
+            if now >= next_save:
+                frame = self._snapshot()
+                if frame is not None:
+                    self._save("day", session_date, now, latest=frame, max_stack=None)
+                    write_heartbeat(self._heartbeat, now)
+                    last_ok = now
+                else:
+                    print("[day] snapshot failed", flush=True)
+                next_save = now + self._interval
+                mode, session_date = self._resolve_session()
+                if mode == "night":
+                    return
+            if time.time() - last_ok > self._hard_stall:
+                print(
+                    f"[fatal] no day frame for {time.time() - last_ok:.0f}s; "
+                    "exiting for restart",
+                    flush=True,
+                )
+                sys.exit(1)
+            time.sleep(0.5)
+
+    def _run_night(self, session_date):
+        """Continuous stream + peak-hold; a stack every interval."""
+        reader = StreamReader(self._url)
+        reader.start()
+        start = time.time()
         window_start = time.time()
         next_save = window_start + self._interval
         max_stack = None
@@ -223,58 +285,57 @@ class Capturer:
         latest = None
         last_hb = 0.0
         stall_logged = False
+        try:
+            while self._running:
+                item = reader.get(timeout=1.0)
+                now = time.time()
 
-        while self._running:
-            item = self._reader.get(timeout=1.0)
-            now = time.time()
-
-            if item is not None:
-                frame, _ = item
-                latest = frame
-                if mode == "night":
+                if item is not None:
+                    frame, _ = item
+                    latest = frame
                     if max_stack is None:
                         max_stack = frame.copy()
                         stack_sum = np.zeros(frame.shape[:2], dtype=np.uint16)
                     else:
                         update_max_stack(max_stack, frame, stack_sum)
 
-            # Heartbeat = time of last good frame, written at most once/second.
-            if now - last_hb >= 1.0:
-                write_heartbeat(self._heartbeat, self._reader.last_frame_time)
-                last_hb = now
+                # Heartbeat = time of last good frame, written at most once/second.
+                if now - last_hb >= 1.0:
+                    write_heartbeat(self._heartbeat, reader.last_frame_time)
+                    last_hb = now
 
-            # Stall logging (reader handles the actual reconnect).
-            lft = self._reader.last_frame_time
-            if lft and now - lft > self._stall_timeout:
-                if not stall_logged:
-                    print(f"[stall] no frame for {now - lft:.0f}s", flush=True)
-                    stall_logged = True
-            else:
-                stall_logged = False
+                # Stall logging (reader handles the actual reconnect).
+                lft = reader.last_frame_time
+                if lft and now - lft > self._stall_timeout:
+                    if not stall_logged:
+                        print(f"[stall] no frame for {now - lft:.0f}s", flush=True)
+                        stall_logged = True
+                else:
+                    stall_logged = False
 
-            # Hard stall: exit nonzero so `restart: unless-stopped` restarts us
-            # with a clean process/connection. Also covers never connecting on
-            # startup (reference the launch time until the first frame arrives).
-            reference = lft if lft else start
-            if now - reference > self._hard_stall:
-                why = "no first frame" if not lft else "stream stalled"
-                print(
-                    f"[fatal] {why} for {now - reference:.0f}s; exiting for restart",
-                    flush=True,
-                )
-                self._reader.stop()
-                sys.exit(1)
+                # Hard stall: exit nonzero so `restart: unless-stopped` restarts us
+                # with a clean process/connection (also covers never connecting).
+                reference = lft if lft else start
+                if now - reference > self._hard_stall:
+                    why = "no first frame" if not lft else "stream stalled"
+                    print(
+                        f"[fatal] {why} for {now - reference:.0f}s; exiting for restart",
+                        flush=True,
+                    )
+                    sys.exit(1)
 
-            # Window boundary: save and begin the next window.
-            if now >= next_save:
-                self._save(mode, session_date, window_start, latest, max_stack)
-                window_start = now
-                next_save = window_start + self._interval
-                mode, session_date = self._resolve_session()
-                max_stack = None
-                stack_sum = None
-
-        self._reader.stop()
+                # Window boundary: save the stack and begin the next window.
+                if now >= next_save:
+                    self._save("night", session_date, window_start, latest, max_stack)
+                    window_start = now
+                    next_save = window_start + self._interval
+                    mode, session_date = self._resolve_session()
+                    if mode == "day":
+                        return
+                    max_stack = None
+                    stack_sum = None
+        finally:
+            reader.stop()
 
     def stop(self, *_):
         print("[main] shutting down", flush=True)
